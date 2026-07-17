@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>visual-llm — MoE light replay</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <main id="wrap"><canvas id="stage"></canvas><canvas id="lensCanvas"></canvas></main>
+
+  <header id="hud">
+    <div id="brand">visual-llm</div>
+    <div id="styleInfo">
+      <h1 id="styleName"></h1>
+      <p id="styleBlurb"></p>
+    </div>
+  </header>
+
+  <div id="serverWrap" hidden>
+    <div class="usageTitle">capture server</div>
+    <div class="srvRow">
+      <input id="srvUrl" type="text" placeholder="http://your-server:8081" spellcheck="false" />
+      <button id="srvConnect">connect</button>
+    </div>
+    <div id="srvList"></div>
+    <textarea id="srvPrompt" rows="2" placeholder="send a prompt to the model, then watch its routing here…"></textarea>
+    <div class="srvRow">
+      <button id="srvGen">generate + load</button>
+      <span id="srvStatus"></span>
+    </div>
+  </div>
+
+  <div id="usageWrap" hidden>
+    <div class="usageTitle">expert usage — cold cells = reap candidates</div>
+    <canvas id="usageCanvas"></canvas>
+    <div class="usageCap">rows = layers · cols = experts · magenta = already pruned</div>
+  </div>
+
+  <footer id="controls">
+    <div id="ticker" aria-live="off"></div>
+    <div id="bar">
+      <button id="btnPrev" title="previous style (←)">◀</button>
+      <select id="selStyle" title="visual style"></select>
+      <button id="btnNext" title="next style (→)">▶</button>
+      <span class="sep"></span>
+      <button id="btnPlay" title="play / pause (space)">⏸</button>
+      <input id="speed" type="range" min="0.25" max="3" step="0.05" value="1" title="playback speed" />
+      <div id="progress" title="scrub"><div id="progressFill"></div></div>
+      <select id="selRec" title="recording"></select>
+      <label class="chk" title="auto-cycle styles (c)"><input id="chkCycle" type="checkbox" checked />cycle</label>
+      <button id="btnServer" title="capture server — browse and generate recordings (s)">⇄</button>
+      <button id="btnLens" title="reap lens — mark cold experts in the visual (r)">✂</button>
+      <button id="btnMask" title="export reap mask for visual-llm-capture --mask (e)">⤓</button>
+      <button id="btnUsage" title="expert usage map (u)">▦</button>
+    </div>
+  </footer>
+
+  <div id="fadeOverlay"></div>
+  <div id="toast" hidden></div>
+
+  <script defer src="js/utils.js"></script>
+  <script defer src="js/synthetic.js"></script>
+  <script defer src="js/replay.js"></script>
+  <script defer src="js/styles/flow.js"></script>
+  <script defer src="js/styles/synapse.js"></script>
+  <script defer src="js/styles/web.js"></script>
+  <script defer src="js/styles/tree.js"></script>
+  <script defer src="js/styles/bonsai.js"></script>
+  <script defer src="js/styles/delta.js"></script>
+  <script defer src="js/styles/city.js"></script>
+  <script defer src="js/styles/galaxy.js"></script>
+  <script defer src="js/styles/aurora.js"></script>
+  <script defer src="js/styles/abyss.js"></script>
+  <script defer src="js/styles/rose.js"></script>
+  <script defer src="js/styles/circuit.js"></script>
+  <script defer src="js/styles/metro.js"></script>
+  <script defer src="js/styles/blueprint.js"></script>
+  <script defer src="js/styles/rack.js"></script>
+  <script defer src="js/main.js"></script>
+</body>
+</html>

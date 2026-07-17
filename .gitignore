@@ -1,0 +1,5 @@
+captures/
+.playwright-mcp/
+tasks/
+*.log
+reap-mask*.txt
