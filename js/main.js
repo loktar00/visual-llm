@@ -186,13 +186,15 @@
     /* ---------- reap mask export (for visual-llm-capture --mask) ---------- */
 
     function exportMask() {
-      const cands = engine.getReapCandidates();
+      const manual = manualMask.size > 0;
+      const cands = manual ? maskPairs() : engine.getReapCandidates();
       if (!cands.length) {
         toast('no reap candidates yet — let the replay run a while first');
         return;
       }
       let txt =
-        `# visual-llm reap mask — ${engine.model.name} — ${cands.length} experts\n` +
+        `# visual-llm reap mask — ${engine.model.name} — ${cands.length} experts` +
+        `${manual ? ' (hand-picked)' : ''}\n` +
         `# usage: visual-llm-capture --mask reap-mask.txt ...\n# layer expert\n`;
       cands.forEach(([l, e]) => (txt += `${l} ${e}\n`));
       const a = document.createElement('a');
@@ -250,6 +252,7 @@
       else if (e.key === 'r' || e.key === 'R') toggleLens();
       else if (e.key === 'e' || e.key === 'E') exportMask();
       else if (e.key === 's' || e.key === 'S') toggleServer();
+      else if (e.key === 'm' || e.key === 'M') toggleMaskEdit();
       else if (e.key === 't' || e.key === 'T') {
         engine.showLabels = !engine.showLabels;
         toast(engine.showLabels
@@ -286,6 +289,87 @@
       } catch (err) {
         console.error(err);
         toast(`could not parse ${file.name} as a visual-llm JSONL recording`);
+      }
+    });
+
+    /* ---------- interactive mask editor ---------- */
+
+    const manualMask = engine.manualMask;
+    const btnMaskEdit = $('btnMaskEdit');
+    const maskCount = $('maskCount');
+    let maskEdit = false;
+    let painting = false;
+    let lastPaint = 0;
+
+    function syncMaskUi() {
+      maskCount.textContent = manualMask.size ? `· ${manualMask.size} experts` : '· click the art with ✎ on';
+      btnMaskEdit.style.color = maskEdit ? '#ffa430' : '';
+    }
+    function toggleMaskEdit() {
+      maskEdit = !maskEdit;
+      canvas.style.cursor = maskEdit ? 'crosshair' : '';
+      if (maskEdit && chkCycle.checked) chkCycle.checked = false; // don't yank the layout mid-edit
+      toast(maskEdit
+        ? 'mask editor on — click experts to toggle, drag to paint, alt-drag to erase'
+        : 'mask editor off');
+      syncMaskUi();
+    }
+    btnMaskEdit.addEventListener('click', toggleMaskEdit);
+
+    function paintAt(e, toggle) {
+      const r = canvas.getBoundingClientRect();
+      const hit = engine.nodeAt(e.clientX - r.left, e.clientY - r.top);
+      if (!hit) return;
+      const key = hit[0] + ':' + hit[1];
+      if (toggle) manualMask.has(key) ? manualMask.delete(key) : manualMask.add(key);
+      else if (e.altKey) manualMask.delete(key);
+      else manualMask.add(key);
+      syncMaskUi();
+    }
+    canvas.addEventListener('pointerdown', (e) => {
+      if (!maskEdit) return;
+      painting = true;
+      paintAt(e, true);
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      if (!maskEdit || !painting) return;
+      const now = performance.now();
+      if (now - lastPaint < 40) return; // hit-testing walks every node
+      lastPaint = now;
+      paintAt(e, false);
+    });
+    window.addEventListener('pointerup', () => (painting = false));
+
+    $('maskSeed').addEventListener('click', () => {
+      const cands = engine.getReapCandidates();
+      cands.forEach(([l, e]) => manualMask.add(l + ':' + e));
+      syncMaskUi();
+      toast(`seeded ${cands.length} lens candidates — refine by clicking with ✎`);
+    });
+    $('maskClear').addEventListener('click', () => {
+      manualMask.clear();
+      syncMaskUi();
+    });
+    function maskPairs() {
+      return [...manualMask]
+        .map((k) => k.split(':').map(Number))
+        .sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    }
+    $('maskApply').addEventListener('click', async () => {
+      if (!srvBase()) { srvStatus.textContent = 'enter the capture server url'; return; }
+      try {
+        const r = await fetch(srvBase() + '/mask', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pairs: maskPairs() }),
+        });
+        const d = await r.json();
+        toast(d.applied
+          ? `server mask applied: ${d.applied} experts ablated from the next request on`
+          : 'server mask cleared — model is whole again');
+      } catch (err) {
+        console.error(err);
+        srvStatus.textContent = 'mask apply failed — see console';
       }
     });
 

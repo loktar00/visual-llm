@@ -59,7 +59,8 @@
       this.speed = 1;
       this.loop = true;
       this.reapLens = false;
-      this.showLabels = true; // input/output token text at entry and exit
+      this.showLabels = true;      // input/output token text at entry and exit
+      this.manualMask = new Set(); // "l:e" — hand-picked reap selection
       this.time = 0;
       this.processedTime = 0;
       this.pulses = [];
@@ -287,7 +288,7 @@
       const ctx = this.lensCtx;
       const style = this.style;
       const usable = style && typeof style.nodePos === 'function';
-      if (!ctx || !usable || (!this.reapLens && !this.showLabels)) {
+      if (!ctx || !usable || (!this.reapLens && !this.showLabels && !this.manualMask.size)) {
         if (this._lensDirty) this._clearLens();
         return;
       }
@@ -299,7 +300,45 @@
       ctx.clearRect(0, 0, this.w, this.h);
       this._lensDirty = true;
       if (this.reapLens) this._drawReapLens(ctx);
+      if (this.manualMask.size) this._drawManualMask(ctx);
       if (this.showLabels) this._drawTokenLabels(ctx);
+    }
+
+    /* Hand-picked reap selection: bright amber ring + X on each chosen expert,
+       visually distinct from the lens's crimson auto-candidates. */
+    _drawManualMask(ctx) {
+      const style = this.style;
+      ctx.lineWidth = 1.6;
+      ctx.strokeStyle = 'rgba(255,164,48,0.9)';
+      for (const key of this.manualMask) {
+        const ci = key.indexOf(':');
+        const l = +key.slice(0, ci), e = +key.slice(ci + 1);
+        if (l >= this.nL || e >= this.nE) continue;
+        const p = this._safeNodePos(style, l, e);
+        if (!p) continue;
+        ctx.beginPath();
+        ctx.arc(p[0], p[1], 6, 0, Math.PI * 2);
+        ctx.moveTo(p[0] - 3.5, p[1] - 3.5); ctx.lineTo(p[0] + 3.5, p[1] + 3.5);
+        ctx.moveTo(p[0] + 3.5, p[1] - 3.5); ctx.lineTo(p[0] - 3.5, p[1] + 3.5);
+        ctx.stroke();
+      }
+    }
+
+    /* Nearest expert node to a canvas point (CSS px), for click-to-mask. */
+    nodeAt(x, y, radius = 14) {
+      const style = this.style;
+      if (!style || typeof style.nodePos !== 'function') return null;
+      let best = null, bestD = radius * radius;
+      for (let l = 0; l < this.nL; l++) {
+        for (let e = 0; e < this.nE; e++) {
+          const p = this._safeNodePos(style, l, e);
+          if (!p) continue;
+          const dx = p[0] - x, dy = p[1] - y;
+          const d = dx * dx + dy * dy;
+          if (d < bestD) { bestD = d; best = [l, e]; }
+        }
+      }
+      return best;
     }
 
     /* Input/output token text in the art itself: a launching pulse carries its

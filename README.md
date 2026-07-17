@@ -33,8 +33,9 @@ below works before you ever touch a GPU.
 | `t` | token labels — input text at the entry, produced token at the exit |
 | `u` | expert usage heatmap overlay (cold cells = reap candidates) |
 | `r` | **reap lens** — dims the art and marks cold experts ⊘ and pruned experts ✕ in-place |
-| `e` | export current reap candidates as a mask file |
-| `s` | connect to a capture server: browse recordings, prompt the model from the UI |
+| `m` | **mask editor** — click experts in any style to hand-pick a reap; drag paints, alt-drag erases |
+| `e` | export the mask (hand-picked if present, else the lens candidates) |
+| `s` | connect to a capture server: browse recordings, prompt the model from the UI, apply your mask live |
 | drag & drop | load any `.jsonl` recording |
 
 ![Token Flow view of a reaped model with the reap lens on](docs/img/token-flow-reap-lens.jpg)
@@ -88,7 +89,10 @@ loop, each step validated by the previous one:
 3. **Rehearse** — run with `--mask reap-mask.txt` (CLI or server): masked
    experts' router logits are forced to −∞, which is *mathematically
    identical* to inference-time pruning. Same weights, live A/B against the
-   full model, reversible in one restart.
+   full model, reversible in one restart. Or go fully interactive: press `m`,
+   **click experts in the visualization** (seed from the lens's candidates,
+   then refine by hand), hit *apply to server*, and your next prompt runs
+   as-if-reaped — the recording comes back wearing the scars you chose.
 4. **Commit** — `reap_gguf.py model.gguf smaller.gguf --mask …` physically
    slices the pruned experts out of the quantized GGUF (byte-exact, no
    requantization) and fixes the router + metadata. Verified on a 35B-A3B:

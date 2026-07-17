@@ -64,7 +64,10 @@ visual-llm-capture -m model.gguf --server --port 8081 \
 
 Endpoints: `POST /v1/chat/completions` (applies the model's chat template),
 `POST /v1/completions` (raw prompt), `GET /v1/models` + `GET /health` (health
-checks). Streaming (`stream:true`, SSE) and non-streaming both work. Requests
+checks), `GET /captures` + `GET /captures/<name>` (recording browser for the
+frontend's `s` panel), and `GET`/`POST /mask` (read or replace the reap mask
+at runtime — `{"pairs": [[layer, expert], …]}`, empty list clears; the
+frontend's mask editor uses this for its *apply to server* button). Streaming (`stream:true`, SSE) and non-streaming both work. Requests
 are serialized (one generation at a time) so routing attribution stays clean;
 each request clears the KV cache and re-reads the full conversation, so every
 capture is a complete, self-contained recording of that turn. `--mask` works

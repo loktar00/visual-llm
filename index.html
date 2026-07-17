@@ -29,6 +29,12 @@
       <button id="srvGen">generate + load</button>
       <span id="srvStatus"></span>
     </div>
+    <div class="usageTitle" style="margin-top:4px">reap mask <span id="maskCount"></span></div>
+    <div class="srvRow">
+      <button id="maskSeed" title="start from the lens's cold-expert candidates">seed from lens</button>
+      <button id="maskClear">clear</button>
+      <button id="maskApply" title="apply the hand-picked mask to the capture server (router ablation, next request on)">apply to server</button>
+    </div>
   </div>
 
   <div id="usageWrap" hidden>
@@ -49,6 +55,7 @@
       <div id="progress" title="scrub"><div id="progressFill"></div></div>
       <select id="selRec" title="recording"></select>
       <label class="chk" title="auto-cycle styles (c)"><input id="chkCycle" type="checkbox" checked />cycle</label>
+      <button id="btnMaskEdit" title="mask editor — click experts in the art to hand-pick a reap (m)">✎</button>
       <button id="btnServer" title="capture server — browse and generate recordings (s)">⇄</button>
       <button id="btnLens" title="reap lens — mark cold experts in the visual (r)">✂</button>
       <button id="btnMask" title="export reap mask for visual-llm-capture --mask (e)">⤓</button>

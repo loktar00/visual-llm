@@ -230,6 +230,46 @@ struct Generator {
 
     bool init(const struct args_t & args); // defined after args_t
 
+    // (Re)apply a reap mask. Returns the number of experts masked. Never lets
+    // a layer lose every expert (that would NaN the router softmax). Callers
+    // in server mode must hold the generation mutex.
+    int apply_mask_pairs(const std::vector<std::pair<int,int>> & pairs) {
+        for (auto & m : cap.mask) std::fill(m.begin(), m.end(), 0);
+        int applied = 0;
+        for (const auto & p : pairs) {
+            if (p.first < 0 || p.first >= (int) cap.mask.size() || p.second < 0 || p.second >= cap.n_expert) {
+                fprintf(stderr, "mask pair out of range, skipped: %d %d\n", p.first, p.second);
+                continue;
+            }
+            if (!cap.mask[p.first][p.second]) { cap.mask[p.first][p.second] = 1; applied++; }
+        }
+        for (size_t li = 0; li < cap.mask.size(); li++) {
+            int masked = 0;
+            for (const auto v : cap.mask[li]) masked += v;
+            if (masked >= cap.n_expert) {
+                fprintf(stderr, "layer %d: mask covers all experts — unmasking\n", (int) li);
+                std::fill(cap.mask[li].begin(), cap.mask[li].end(), 0);
+                applied -= masked;
+            }
+        }
+        cap.mask_active = applied > 0;
+        removed.clear();
+        if (cap.mask_active) {
+            removed = ",\"removed_experts\":[";
+            bool first = true;
+            for (size_t li = 0; li < cap.mask.size(); li++)
+                for (int e = 0; e < (int) cap.mask[li].size(); e++)
+                    if (cap.mask[li][e]) {
+                        char pr[32];
+                        snprintf(pr, sizeof(pr), "%s[%d,%d]", first ? "" : ",", (int) li, e);
+                        removed += pr;
+                        first = false;
+                    }
+            removed += "]";
+        }
+        return applied;
+    }
+
     gen_result generate(const std::vector<llama_token> & prompt_toks, const gen_params & gp,
                         const std::function<void(const std::string &)> & on_text) {
         gen_result R;
@@ -439,36 +479,17 @@ bool Generator::init(const args_t & args) {
         fprintf(stderr, "model: %d MoE layers, %d experts\n", (int) moe_layers.size(), cap.n_expert);
     }
 
-    // mask
+    // mask structures always exist so the mask can also be set at runtime
+    // via the server's POST /mask (interactive reap from the frontend)
+    cap.mask.assign(moe_layers.size(), {});
+    for (size_t li = 0; li < moe_layers.size(); li++) {
+        cap.true2viz[moe_layers[li]] = (int) li;
+        cap.mask[li].assign(cap.n_expert, 0);
+    }
     std::vector<std::pair<int,int>> mask_pairs = args.mask_pairs;
     if (!args.mask_path.empty()) load_mask_file(args.mask_path, mask_pairs);
     if (!mask_pairs.empty()) {
-        cap.mask.assign(moe_layers.size(), {});
-        for (size_t li = 0; li < moe_layers.size(); li++) {
-            cap.true2viz[moe_layers[li]] = (int) li;
-            cap.mask[li].assign(cap.n_expert, 0);
-        }
-        int applied = 0;
-        for (const auto & p : mask_pairs) {
-            if (p.first < 0 || p.first >= (int) moe_layers.size() || p.second < 0 || p.second >= cap.n_expert) {
-                fprintf(stderr, "mask pair out of range, skipped: %d %d\n", p.first, p.second); continue;
-            }
-            if (!cap.mask[p.first][p.second]) { cap.mask[p.first][p.second] = 1; applied++; }
-        }
-        for (size_t li = 0; li < cap.mask.size(); li++) {
-            int masked = 0; for (const auto v : cap.mask[li]) masked += v;
-            if (masked >= cap.n_expert) {
-                fprintf(stderr, "layer %d: mask covers all experts — unmasking\n", (int) li);
-                cap.mask[li].assign(cap.n_expert, 0); applied -= masked;
-            }
-        }
-        cap.mask_active = applied > 0;
-        removed = ",\"removed_experts\":[";
-        bool first = true;
-        for (size_t li = 0; li < cap.mask.size(); li++)
-            for (int e = 0; e < (int) cap.mask[li].size(); e++)
-                if (cap.mask[li][e]) { char pr[32]; snprintf(pr, sizeof(pr), "%s[%d,%d]", first ? "" : ",", (int) li, e); removed += pr; first = false; }
-        removed += "]";
+        const int applied = apply_mask_pairs(mask_pairs);
         fprintf(stderr, "reap simulation: %d experts masked (router ablation)\n", applied);
     }
 
@@ -559,6 +580,31 @@ static int run_server(Generator & G, const args_t & args) {
         for (const auto & e : list) arr.push_back({{"name", e.name}, {"bytes", e.bytes}, {"mtime", e.mtime}});
         res.set_content(json{{"model", G.name}, {"captures", arr}}.dump(), "application/json");
     });
+    // runtime reap mask: GET returns current pairs, POST {"pairs":[[l,e],...]}
+    // replaces the mask (empty list clears). Applies from the next request on;
+    // captures made under a mask carry it as removed_experts.
+    svr.Get("/mask", [&](const httplib::Request &, httplib::Response & res) {
+        std::lock_guard<std::mutex> lk(gmx);
+        json pairs = json::array();
+        for (size_t li = 0; li < G.cap.mask.size(); li++)
+            for (int e = 0; e < (int) G.cap.mask[li].size(); e++)
+                if (G.cap.mask[li][e]) pairs.push_back({(int) li, e});
+        res.set_content(json{{"active", G.cap.mask_active}, {"pairs", pairs}}.dump(), "application/json");
+    });
+    svr.Post("/mask", [&](const httplib::Request & req, httplib::Response & res) {
+        json body;
+        try { body = json::parse(req.body); }
+        catch (...) { res.status = 400; res.set_content("{\"error\":\"bad json\"}", "application/json"); return; }
+        std::vector<std::pair<int,int>> pairs;
+        if (body.contains("pairs") && body["pairs"].is_array())
+            for (auto & p : body["pairs"])
+                if (p.is_array() && p.size() >= 2) pairs.push_back({p[0].get<int>(), p[1].get<int>()});
+        std::lock_guard<std::mutex> lk(gmx);
+        const int applied = G.apply_mask_pairs(pairs);
+        fprintf(stderr, "mask updated via API: %d experts masked\n", applied);
+        res.set_content(json{{"applied", applied}, {"active", G.cap.mask_active}}.dump(), "application/json");
+    });
+
     svr.Get(R"(/captures/([^/]+))", [&](const httplib::Request & req, httplib::Response & res) {
         const std::string fn = req.matches[1];
         if (fn.find("..") != std::string::npos || fn.find('/') != std::string::npos || fn.find('\\') != std::string::npos) {
