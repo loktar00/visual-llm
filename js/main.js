@@ -238,6 +238,11 @@
         usageLast = f.wallNow;
         drawUsage(f);
       }
+      // savings estimate follows the evolving usage while the panel is open
+      if (!srvWrap.hidden && f.wallNow - estLast > 1) {
+        estLast = f.wallNow;
+        updateMaskEst();
+      }
     };
     engine.onStyleError = (id, e) =>
       toast(`style "${id}" crashed — showing fallback (details in console)`);
@@ -330,6 +335,7 @@
       maskCount.textContent = manualMask.size ? `· ${manualMask.size} experts` : '· click the art with ✎ on';
       $('maskBarCount').textContent = label;
       btnMaskEdit.style.color = maskEdit ? '#ffa430' : '';
+      updateMaskEst(); // hoisted; defined with the threshold slider below
     }
     function toggleMaskEdit() {
       maskEdit = !maskEdit;
@@ -438,6 +444,43 @@
       }
     });
 
+    /* ---------- candidate threshold slider + savings estimate ---------- */
+
+    // measured on the Qwen3.6-A3B surgery: a 25% expert cut shrank the gguf
+    // 22.2%, i.e. expert tensors are ~89% of a big MoE file
+    const EXPERT_FILE_SHARE = 0.888;
+    let srvModelBytes = 0; // learned from the capture server on connect
+
+    const reapFracEl = $('reapFrac');
+    reapFracEl.addEventListener('input', () => {
+      engine.reapFrac = +reapFracEl.value / 100;
+      $('reapFracLabel').textContent = reapFracEl.value + '%';
+      updateMaskEst();
+    });
+
+    function updateMaskEst() {
+      const m = engine.model;
+      if (!m) return;
+      const pairs = manualMask.size ? maskPairs() : engine.getReapCandidates();
+      const nE = m.nExperts;
+      let live = 0;
+      for (let l = 0; l < m.nLayers; l++)
+        for (let e = 0; e < nE; e++) if (!m.isRemoved(l, e)) live++;
+      let mass = 0, total = 0;
+      for (let i = 0; i < engine.usage.length; i++) total += engine.usage[i];
+      pairs.forEach(([l, e]) => (mass += engine.usage[l * nE + e]));
+      const fracE = pairs.length / Math.max(1, live);
+      let txt = `${manualMask.size ? 'hand-picked' : 'slider'}: ${pairs.length} experts ` +
+        `(${(fracE * 100).toFixed(0)}%) carrying ${total ? ((100 * mass) / total).toFixed(2) : '0.00'}% of routed mass`;
+      if (srvModelBytes) {
+        const gb = srvModelBytes / 1e9;
+        const saved = gb * EXPERT_FILE_SHARE * fracE;
+        txt += ` · est. reaped file ≈ ${(gb - saved).toFixed(1)} GB (−${saved.toFixed(1)} GB of ${gb.toFixed(1)})`;
+      }
+      $('maskEst').textContent = txt;
+    }
+    let estLast = 0;
+
     /* ---------- physical reap from the UI ---------- */
 
     // llama.cpp needs a uniform expert count per layer, so the selection is
@@ -544,6 +587,8 @@
           srvList.appendChild(row);
         });
         srvStatus.textContent = `${d.model} · ${d.captures.length} recording(s)`;
+        srvModelBytes = d.model_bytes || 0;
+        updateMaskEst();
         return d;
       } catch (err) {
         console.error(err);

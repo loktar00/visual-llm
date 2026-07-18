@@ -580,7 +580,9 @@ static int run_server(Generator & G, const args_t & args) {
         std::sort(list.begin(), list.end(), [](const entry & a, const entry & b) { return a.mtime > b.mtime; });
         json arr = json::array();
         for (const auto & e : list) arr.push_back({{"name", e.name}, {"bytes", e.bytes}, {"mtime", e.mtime}});
-        res.set_content(json{{"model", G.name}, {"captures", arr}}.dump(), "application/json");
+        struct stat mst {};
+        const long long model_bytes = stat(args.model.c_str(), &mst) == 0 ? (long long) mst.st_size : 0;
+        res.set_content(json{{"model", G.name}, {"model_bytes", model_bytes}, {"captures", arr}}.dump(), "application/json");
     });
     // runtime reap mask: GET returns current pairs, POST {"pairs":[[l,e],...]}
     // replaces the mask (empty list clears). Applies from the next request on;

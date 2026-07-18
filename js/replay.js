@@ -61,6 +61,7 @@
       this.reapLens = false;
       this.showLabels = true;      // input/output token text at entry and exit
       this.manualMask = new Set(); // "l:e" — hand-picked reap selection
+      this.reapFrac = 0.25;        // candidate threshold: coldest fraction per layer (slider)
       this.time = 0;
       this.processedTime = 0;
       this.pulses = [];
@@ -440,12 +441,10 @@
       for (let l = 0; l < nL; l++) {
         // rank this layer's live experts by usage, coldest first
         order.length = 0;
-        let sum = 0;
         for (let e = 0; e < nE; e++) {
           const idx = l * nE + e;
           if (this.model.removed && this.model.removed[idx]) {
-            let p;
-            try { p = style.nodePos(l, e); } catch { p = null; }
+            const p = this._safeNodePos(style, l, e);
             if (!p) continue;
             ctx.strokeStyle = 'rgba(160,38,62,0.7)';
             ctx.beginPath();
@@ -454,19 +453,15 @@
             ctx.stroke();
             continue;
           }
-          sum += this.usage[idx];
           order.push(e);
         }
         if (!order.length) continue;
-        const mean = sum / order.length;
         order.sort((a, b) => this.usage[l * nE + a] - this.usage[l * nE + b]);
-        const kMax = Math.max(1, Math.floor(order.length * 0.25));
+        // threshold from the panel slider: coldest frac per layer, cold -> hot
+        const kMax = Math.max(1, Math.floor(order.length * this.reapFrac));
         for (let k = 0; k < kMax; k++) {
           const e = order[k];
-          const u = this.usage[l * nE + e];
-          if (u > mean * 0.6) break; // layer is too uniform to call these cold
-          let p;
-          try { p = style.nodePos(l, e); } catch { p = null; }
+          const p = this._safeNodePos(style, l, e);
           if (!p) continue;
           const cold = 1 - k / kMax;
           const breathe = 0.75 + 0.25 * Math.sin(wn * 2 + (l * 7 + e) * 0.7);
@@ -483,31 +478,25 @@
       }
     }
 
-    /* Current reap candidates — same per-layer bottom-quartile criteria the
-       lens draws, as [layer, expert] pairs. Feed to visual-llm-capture --mask
-       to simulate the reap via router masking. */
-    getReapCandidates() {
+    /* Current reap candidates — each layer's coldest `frac` of live experts,
+       ranked by observed usage (frac comes from the panel slider; 0.25 default
+       marks the cold, higher values reach into cool and warm territory).
+       Feed to visual-llm-capture --mask to simulate the reap via masking. */
+    getReapCandidates(frac = this.reapFrac) {
       const out = [];
       if (!this.rec) return out;
       const nL = this.nL, nE = this.nE;
       for (let l = 0; l < nL; l++) {
         const live = [];
-        let sum = 0;
         for (let e = 0; e < nE; e++) {
           const idx = l * nE + e;
           if (this.model.removed && this.model.removed[idx]) continue;
-          sum += this.usage[idx];
           live.push(e);
         }
         if (!live.length) continue;
-        const mean = sum / live.length;
         live.sort((a, b) => this.usage[l * nE + a] - this.usage[l * nE + b]);
-        const kMax = Math.max(1, Math.floor(live.length * 0.25));
-        for (let k = 0; k < kMax; k++) {
-          const e = live[k];
-          if (this.usage[l * nE + e] > mean * 0.6) break;
-          out.push([l, e]);
-        }
+        const kMax = Math.max(1, Math.floor(live.length * frac));
+        for (let k = 0; k < kMax; k++) out.push([l, live[k]]);
       }
       return out;
     }
