@@ -221,9 +221,29 @@ single tail-expert flips concentrated in late layers — while the *same* pruned
 model run on CPU vs GPU only agrees with itself 73.4%. The surgery difference
 is below the hardware noise floor.
 
-Gold-standard alternative for a maximum-quality artifact: prune the original
-HF safetensors model (see Cerebras' REAP repo), then `convert_hf_to_gguf.py`
-and requantize — heavier, but requantization adapts to the pruned weights.
+## Physical reaping of the HF checkpoint (`reap_hf.py`) — the finetune path
+
+To *finetune* a reaped model (prune-then-heal, or domain specialization) you
+need full-precision weights, so there is a safetensors sibling of the GGUF
+surgery:
+
+```bash
+python3 reap_hf.py Qwen3.6-35B-A3B/ Qwen3.6-35B-A3B-REAP192/ \
+  --mask canvas-mask-exact.txt
+```
+
+Same philosophy: streams raw bytes (the expert index is axis 0 of the fused
+`mlp.experts.*` tensors, so each expert is a contiguous slab — dtype-agnostic,
+no torch, trivial RAM), slices the router rows to match, patches
+`num_experts`, rewrites the shard index, and copies tokenizer/vision/etc.
+verbatim. MTP/draft stacks are pruned with the last main layer's keep list.
+Verified on Qwen3.6-35B-A3B: 71.9 → 55.4 GB bf16 (−23%).
+
+The output is a normal HF model: QLoRA it on domain data (router frozen,
+LoRA on attention + surviving expert projections), merge, then
+`convert_hf_to_gguf.py` + `llama-quantize` and serve. Validate the surgery
+the same way as reap_gguf: convert → quantize → greedy-compare routing
+against the masked original.
 
 ## Related knob: fewer active experts
 
