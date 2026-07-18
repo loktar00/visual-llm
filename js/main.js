@@ -254,6 +254,8 @@
       else if (e.key === 'e' || e.key === 'E') exportMask();
       else if (e.key === 's' || e.key === 'S') toggleServer();
       else if (e.key === 'm' || e.key === 'M') toggleMaskEdit();
+      else if (e.key === 'Escape' && maskEdit) toggleMaskEdit();
+      else if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey) && maskEdit) { e.preventDefault(); undoMask(); }
       else if (e.key === 't' || e.key === 'T') {
         engine.showLabels = !engine.showLabels;
         toast(engine.showLabels
@@ -298,24 +300,65 @@
     const manualMask = engine.manualMask;
     const btnMaskEdit = $('btnMaskEdit');
     const maskCount = $('maskCount');
+    const maskBar = $('maskBar');
     let maskEdit = false;
     let painting = false;
+    let boxing = null; // { sx, sy, erase } while shift-dragging a rectangle
     let lastPaint = 0;
+    const undoStack = [];
+
+    function pushUndo() {
+      undoStack.push([...manualMask]);
+      if (undoStack.length > 40) undoStack.shift();
+    }
+    function undoMask() {
+      if (!undoStack.length) { toast('nothing to undo'); return; }
+      const prev = undoStack.pop();
+      manualMask.clear();
+      prev.forEach((k) => manualMask.add(k));
+      syncMaskUi();
+    }
+    function clearMask() {
+      if (!manualMask.size) return;
+      pushUndo();
+      manualMask.clear();
+      syncMaskUi();
+    }
 
     function syncMaskUi() {
+      const label = manualMask.size ? `${manualMask.size} experts` : 'nothing selected';
       maskCount.textContent = manualMask.size ? `· ${manualMask.size} experts` : '· click the art with ✎ on';
+      $('maskBarCount').textContent = label;
       btnMaskEdit.style.color = maskEdit ? '#ffa430' : '';
     }
     function toggleMaskEdit() {
       maskEdit = !maskEdit;
+      maskBar.hidden = !maskEdit;
       canvas.style.cursor = maskEdit ? 'crosshair' : '';
       if (maskEdit && chkCycle.checked) chkCycle.checked = false; // don't yank the layout mid-edit
-      toast(maskEdit
-        ? 'mask editor on — click experts to toggle, drag to paint, alt-drag to erase'
-        : 'mask editor off');
+      if (!maskEdit) hideRubber();
       syncMaskUi();
     }
     btnMaskEdit.addEventListener('click', toggleMaskEdit);
+    $('maskBarDone').addEventListener('click', toggleMaskEdit);
+    $('maskBarClear').addEventListener('click', clearMask);
+    $('maskBarUndo').addEventListener('click', undoMask);
+
+    // rubber band for shift-drag box selection
+    let rubber = null;
+    function showRubber(x0, y0, x1, y1) {
+      if (!rubber) {
+        rubber = document.createElement('div');
+        rubber.id = 'rubberBand';
+        document.body.appendChild(rubber);
+      }
+      rubber.style.left = Math.min(x0, x1) + 'px';
+      rubber.style.top = Math.min(y0, y1) + 'px';
+      rubber.style.width = Math.abs(x1 - x0) + 'px';
+      rubber.style.height = Math.abs(y1 - y0) + 'px';
+      rubber.style.display = 'block';
+    }
+    function hideRubber() { if (rubber) rubber.style.display = 'none'; }
 
     function paintAt(e, toggle) {
       const r = canvas.getBoundingClientRect();
@@ -329,28 +372,49 @@
     }
     canvas.addEventListener('pointerdown', (e) => {
       if (!maskEdit) return;
+      if (e.shiftKey) {
+        boxing = { sx: e.clientX, sy: e.clientY, erase: e.altKey };
+        showRubber(e.clientX, e.clientY, e.clientX, e.clientY);
+        return;
+      }
       painting = true;
+      pushUndo();
       paintAt(e, true);
     });
     canvas.addEventListener('pointermove', (e) => {
-      if (!maskEdit || !painting) return;
+      if (!maskEdit) return;
+      if (boxing) { showRubber(boxing.sx, boxing.sy, e.clientX, e.clientY); return; }
+      if (!painting) return;
       const now = performance.now();
       if (now - lastPaint < 40) return; // hit-testing walks every node
       lastPaint = now;
       paintAt(e, false);
     });
-    window.addEventListener('pointerup', () => (painting = false));
+    window.addEventListener('pointerup', (e) => {
+      if (boxing) {
+        hideRubber();
+        const r = canvas.getBoundingClientRect();
+        const hits = engine.nodesIn(boxing.sx - r.left, boxing.sy - r.top, e.clientX - r.left, e.clientY - r.top);
+        if (hits.length) {
+          pushUndo();
+          const erase = boxing.erase || e.altKey;
+          hits.forEach(([l, ex]) => (erase ? manualMask.delete(l + ':' + ex) : manualMask.add(l + ':' + ex)));
+          toast(`${erase ? 'removed' : 'selected'} ${hits.length} experts in the box`);
+          syncMaskUi();
+        }
+        boxing = null;
+      }
+      painting = false;
+    });
 
     $('maskSeed').addEventListener('click', () => {
       const cands = engine.getReapCandidates();
+      pushUndo();
       cands.forEach(([l, e]) => manualMask.add(l + ':' + e));
       syncMaskUi();
       toast(`seeded ${cands.length} lens candidates — refine by clicking with ✎`);
     });
-    $('maskClear').addEventListener('click', () => {
-      manualMask.clear();
-      syncMaskUi();
-    });
+    $('maskClear').addEventListener('click', clearMask);
     function maskPairs() {
       return [...manualMask]
         .map((k) => k.split(':').map(Number))

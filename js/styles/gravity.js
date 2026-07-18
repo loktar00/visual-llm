@@ -98,16 +98,18 @@
           this.py[i] += (ty - this.py[i]) * ease;
 
           if (removed) {
-            // dead cinder beyond the rim
-            ctx.fillStyle = 'rgba(255,70,105,0.05)';
-            ctx.fillRect(this.px[i], this.py[i], 1.4, 1.4);
+            // dead cinder beyond the rim — dim but unmistakably there
+            ctx.fillStyle = 'rgba(255,84,118,0.14)';
+            ctx.fillRect(this.px[i] - 1, this.py[i] - 1, 2.2, 2.2);
             continue;
           }
           const v = Math.max(heat, u * 0.55);
           if (v < 0.02) {
-            // cold speck adrift in the shell
-            ctx.fillStyle = 'rgba(125,145,195,0.10)';
-            ctx.fillRect(this.px[i], this.py[i], 1.3, 1.3);
+            // cold speck adrift in the shell: clearly visible, cool-toned so
+            // the burning core reads by contrast, with a slow twinkle
+            const tw = 0.75 + 0.25 * Math.sin(f.wallNow * 0.9 + this.ph[i]);
+            ctx.fillStyle = `rgba(142,162,215,${0.2 * tw})`;
+            ctx.fillRect(this.px[i] - 1, this.py[i] - 1, 2.2, 2.2);
           } else {
             // warm bubble: accumulation-safe halo + heat-colored body
             VLM.drawSprite(ctx, this.glow, this.px[i], this.py[i], 4 + 30 * v, 0.02 + 0.1 * v);

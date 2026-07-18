@@ -331,6 +331,23 @@
       }
     }
 
+    /* All experts inside a screen-space rectangle, for box selection. */
+    nodesIn(x0, y0, x1, y1) {
+      const style = this.style;
+      if (!style || typeof style.nodePos !== 'function') return [];
+      const lo = [Math.min(x0, x1), Math.min(y0, y1)];
+      const hi = [Math.max(x0, x1), Math.max(y0, y1)];
+      const out = [];
+      for (let l = 0; l < this.nL; l++) {
+        for (let e = 0; e < this.nE; e++) {
+          const p = this._safeNodePos(style, l, e);
+          if (!p) continue;
+          if (p[0] >= lo[0] && p[0] <= hi[0] && p[1] >= lo[1] && p[1] <= hi[1]) out.push([l, e]);
+        }
+      }
+      return out;
+    }
+
     /* Nearest expert node to a canvas point (CSS px), for click-to-mask. */
     nodeAt(x, y, radius = 14) {
       const style = this.style;
