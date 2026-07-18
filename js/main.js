@@ -268,6 +268,12 @@
           : 'token labels off');
       }
       else if (e.key === 'c' || e.key === 'C') chkCycle.checked = !chkCycle.checked;
+      else if (e.key === 'h' || e.key === 'H') {
+        engine.setHeatPersist(!engine.heatPersist);
+        toast(engine.heatPersist
+          ? 'heat persistence on — cumulative: once an expert lights up it stays lit (the reap-judging view)'
+          : 'heat persistence off — heat shows recent routing and cools with a ~9 s half-life');
+      }
       else if (/^[0-9]$/.test(e.key)) {
         const n = e.key === '0' ? 9 : +e.key - 1;
         if (n < styles.length) setStyle(n);

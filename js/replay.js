@@ -62,6 +62,7 @@
       this.showLabels = true;      // input/output token text at entry and exit
       this.manualMask = new Set(); // "l:e" — hand-picked reap selection
       this.reapFrac = 0.25;        // candidate threshold: coldest fraction per layer (slider)
+      this.heatPersist = false;    // true: heat never decays (cumulative view)
       this.time = 0;
       this.processedTime = 0;
       this.pulses = [];
@@ -171,6 +172,14 @@
     togglePlay() { this.playing = !this.playing; }
     setSpeed(s) { this.speed = VLM.clamp(s, 0.05, 5); }
 
+    /* Heat normally decays (HEAT_HALFLIFE) so the art shows
+       *recent* routing; persistence makes it cumulative — once hot, always
+       hot — which is the view that matters when judging what to reap. */
+    setHeatPersist(on) {
+      this.heatPersist = !!on;
+      if (this.rec) this._rebuild(); // exact recompute under the new rule
+    }
+
     scrubTo(frac) {
       if (!this.rec) return;
       this.time = VLM.clamp(frac, 0, 1) * this.duration;
@@ -193,7 +202,7 @@
           if (hit > time) break;
           const hop = tok.layers[l];
           const age = time - hit;
-          const decay = Math.exp((-age * LN2) / HEAT_HALFLIFE);
+          const decay = this.heatPersist ? 1 : Math.exp((-age * LN2) / HEAT_HALFLIFE);
           for (let k = 0; k < hop.experts.length; k++) {
             const idx = l * this.nE + hop.experts[k];
             const w = hop.weights[k];
@@ -218,10 +227,12 @@
         this.time += dt;
         const tokens = this.rec.tokens;
 
-        // decay heat
-        const decay = Math.exp((-dt * LN2) / HEAT_HALFLIFE);
+        // decay heat (unless persistence is on — then heat is cumulative)
         const heat = this.heat;
-        for (let i = 0; i < heat.length; i++) heat[i] *= decay;
+        if (!this.heatPersist) {
+          const decay = Math.exp((-dt * LN2) / HEAT_HALFLIFE);
+          for (let i = 0; i < heat.length; i++) heat[i] *= decay;
+        }
 
         // apply layer hits that occurred in (processedTime, time]
         const t0 = this.processedTime, t1 = this.time;

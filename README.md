@@ -32,6 +32,7 @@ below works before you ever touch a GPU.
 | `space` / drag bar | pause / scrub the replay |
 | `t` | token labels — input text at the entry, produced token at the exit |
 | `u` | expert usage heatmap overlay (cold cells = reap candidates) |
+| `h` | heat persistence — by default heat shows *recent* routing and cools (~9 s half-life); persistent heat is cumulative, so anything ever used stays lit |
 | `r` | **reap lens** — dims the art and marks cold experts ⊘ and pruned experts ✕ in-place |
 | `m` | **mask editor** — click experts in any style to hand-pick a reap; drag paints, alt-drag erases |
 | `e` | export the mask (hand-picked if present, else the lens candidates) |
