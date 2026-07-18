@@ -36,6 +36,10 @@
       <span id="reapFracLabel" style="font-size:12px;min-width:34px;text-align:right">25%</span>
     </div>
     <div id="maskEst" class="usageCap"></div>
+    <div class="srvRow" title="what the reap mask is computed from: your hand-picked / lens selection, or router mass aggregated across a whole recorded corpus on the server">
+      <span style="font-size:11.5px;color:var(--fg-dim);white-space:nowrap">mask from</span>
+      <select id="reapSrc" style="flex:1"><option value="">this selection (lens / hand-picked)</option></select>
+    </div>
     <div class="srvRow">
       <button id="maskSeed" title="start from the lens's cold-expert candidates">seed from lens</button>
       <button id="maskClear">clear</button>

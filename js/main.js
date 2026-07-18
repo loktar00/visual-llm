@@ -508,14 +508,21 @@
     }
 
     const btnReap = $('maskReap');
+    const reapSrc = $('reapSrc');
     let reapArmed = null;
     btnReap.addEventListener('click', async () => {
       if (!srvBase()) { srvStatus.textContent = 'enter the capture server url'; return; }
-      const b = balancedMask();
-      if (b.error) { toast(b.error); return; }
+      const set = reapSrc.value;
+      let b = null;
+      if (!set) {
+        b = balancedMask();
+        if (b.error) { toast(b.error); return; }
+      }
       if (!reapArmed) {
-        toast(`this will write a NEW gguf with ${b.n} experts cut from every layer` +
-          `${b.trimmed ? ` (${b.trimmed} picks trimmed to balance)` : ''} — the original is untouched. Click again to run.`);
+        toast(set
+          ? `this will aggregate router mass across every recording in ${set}/ on the server, then write a NEW gguf with the coldest ${Math.round(engine.reapFrac * 100)}% of every layer cut — the original is untouched. Click again to run.`
+          : `this will write a NEW gguf with ${b.n} experts cut from every layer` +
+            `${b.trimmed ? ` (${b.trimmed} picks trimmed to balance)` : ''} — the original is untouched. Click again to run.`);
         btnReap.textContent = 'sure? click again';
         reapArmed = setTimeout(() => { reapArmed = null; btnReap.textContent = 'reap gguf'; }, 8000);
         return;
@@ -527,7 +534,7 @@
         const r = await fetch(srvBase() + '/reap', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pairs: b.pairs }),
+          body: JSON.stringify(set ? { set, frac: engine.reapFrac } : { pairs: b.pairs }),
         });
         const d = await r.json();
         if (!r.ok || d.error) { toast('reap refused: ' + (d.error || r.status)); return; }
@@ -589,6 +596,22 @@
         srvStatus.textContent = `${d.model} · ${d.captures.length} recording(s)`;
         srvModelBytes = d.model_bytes || 0;
         updateMaskEst();
+        // corpus subdirectories become one-click reap sources
+        const sets = new Map();
+        d.captures.forEach((c) => {
+          const i = c.name.indexOf('/');
+          if (i > 0) { const s = c.name.slice(0, i); sets.set(s, (sets.get(s) || 0) + 1); }
+        });
+        const srcEl = $('reapSrc');
+        const cur = srcEl.value;
+        [...srcEl.options].slice(1).forEach((o) => o.remove());
+        for (const [s, n] of sets) {
+          const o = document.createElement('option');
+          o.value = s;
+          o.textContent = `corpus: ${s}/ (${n} recordings)`;
+          srcEl.appendChild(o);
+        }
+        if (sets.has(cur)) srcEl.value = cur;
         return d;
       } catch (err) {
         console.error(err);

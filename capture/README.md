@@ -65,12 +65,19 @@ visual-llm-capture -m model.gguf --server --port 8081 \
 Endpoints: `POST /v1/chat/completions` (applies the model's chat template),
 `POST /v1/completions` (raw prompt), `GET /v1/models` + `GET /health` (health
 checks), `GET /captures` + `GET /captures/<name>` (recording browser for the
-frontend's `s` panel), `GET`/`POST /mask` (read or replace the reap mask at
+frontend's `s` panel; one subdirectory level is listed too, so a corpus
+captured into `captures/canvas/` shows up as `canvas/run-…` entries),
+`GET`/`POST /mask` (read or replace the reap mask at
 runtime — `{"pairs": [[layer, expert], …]}`, empty list clears; the frontend's
 mask editor uses this for its *apply to server* button), and `POST /reap` +
 `GET /reap` (run `reap_gguf.py` on the loaded model asynchronously and poll
 its log — the frontend's *reap gguf* button; pass `--reap-script` so the
-server can find the script; refuses sharded models and never overwrites). Streaming (`stream:true`, SSE) and non-streaming both work. Requests
+server can find the script; refuses sharded models and never overwrites).
+`POST /reap` takes either `{"pairs": […]}` — a hand-picked mask — or
+`{"set": "canvas", "frac": 0.25}`, which first aggregates router mass across
+every recording in that capture subdirectory with `make_mask.py --exact`
+(expected beside the reap script) and then reaps: the **one-click corpus
+reap** behind the frontend's *mask from* selector. Streaming (`stream:true`, SSE) and non-streaming both work. Requests
 are serialized (one generation at a time) so routing attribution stays clean;
 each request clears the KV cache and re-reads the full conversation, so every
 capture is a complete, self-contained recording of that turn. `--mask` works
@@ -187,10 +194,18 @@ stripped), and recordings are named after the files. See `../prompts/` for
 the convention and a ready-made canvas-js sample set, and `hf_prompts.py`
 for dumping Hugging Face dataset columns into a set.
 
+Tip: write the corpus into a subdirectory of the server's `--capture-dir`
+(e.g. `-o /path/captures/canvas/run.jsonl`) — the frontend then lists every
+run under a `canvas/` prefix, and the whole set becomes a one-click reap
+source (next section).
+
 ## Physical reaping — actually shrink the GGUF (`reap_gguf.py`)
 
 Once a mask has proven itself (good text under the `-reaped` sim across a real
-corpus), make it permanent:
+corpus), make it permanent. **One-click:** in the frontend's `s` panel, set
+*mask from* to a recorded corpus (any capture subdirectory), pick the coldness
+fraction with the slider, and hit *reap gguf* — the server aggregates the mask
+and runs the surgery in one go. By hand:
 
 ```bash
 # 1. the mask must remove the SAME number of experts in every layer

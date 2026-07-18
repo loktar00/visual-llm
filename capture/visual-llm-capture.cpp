@@ -652,21 +652,48 @@ static int run_server(Generator & G, const args_t & args) {
                                            "(llama-gguf-split --merge), then serve the merged file"}}.dump(), "application/json");
             return;
         }
+        // mask source: explicit pairs from the UI, or "set" — a capture
+        // subdirectory whose recordings are aggregated server-side by
+        // make_mask.py (the one-click corpus reap)
+        const std::string set = body.value("set", std::string());
         std::vector<std::pair<int,int>> pairs;
         if (body.contains("pairs") && body["pairs"].is_array())
             for (auto & p : body["pairs"])
                 if (p.is_array() && p.size() >= 2) pairs.push_back({p[0].get<int>(), p[1].get<int>()});
-        if (pairs.empty()) {
+        const std::string maskp = args.capture_dir + "/reap-mask-ui.txt";
+        std::string mask_cmd;
+        if (!set.empty()) {
+            if (set.find("..") != std::string::npos || set.find('/') != std::string::npos ||
+                set.find('\\') != std::string::npos) {
+                res.status = 400; res.set_content("{\"error\":\"bad set name\"}", "application/json"); return;
+            }
+            const std::string setdir = args.capture_dir + "/" + set;
+            struct stat st {};
+            if (stat(setdir.c_str(), &st) != 0 || !S_ISDIR(st.st_mode)) {
+                res.status = 400; res.set_content("{\"error\":\"no such capture set\"}", "application/json"); return;
+            }
+            double frac = 0.25;
+            if (body.contains("frac") && body["frac"].is_number()) frac = body["frac"].get<double>();
+            if (!(frac > 0.0 && frac < 1.0)) frac = 0.25;
+            char fs[32]; snprintf(fs, sizeof(fs), "%.4f", frac);
+            // make_mask.py lives beside the reap script; it globs the pattern itself
+            std::string mask_script = args.reap_script;
+            const size_t sl = mask_script.find_last_of("/\\");
+            mask_script = (sl == std::string::npos) ? "make_mask.py"
+                                                    : mask_script.substr(0, sl + 1) + "make_mask.py";
+            mask_cmd = "python3 " + shq(mask_script) + " " + shq(setdir + "/*.jsonl") +
+                       " --frac " + fs + " --exact -o " + shq(maskp) + " 2>&1 && ";
+        } else if (pairs.empty()) {
             res.status = 400;
             res.set_content("{\"error\":\"no mask pairs\"}", "application/json");
             return;
+        } else {
+            FILE * mf = fopen(maskp.c_str(), "wb");
+            if (!mf) { res.status = 500; res.set_content("{\"error\":\"cannot write mask file\"}", "application/json"); return; }
+            fprintf(mf, "# visual-llm reap mask — set from the UI\n");
+            for (const auto & p : pairs) fprintf(mf, "%d %d\n", p.first, p.second);
+            fclose(mf);
         }
-        const std::string maskp = args.capture_dir + "/reap-mask-ui.txt";
-        FILE * mf = fopen(maskp.c_str(), "wb");
-        if (!mf) { res.status = 500; res.set_content("{\"error\":\"cannot write mask file\"}", "application/json"); return; }
-        fprintf(mf, "# visual-llm reap mask — set from the UI\n");
-        for (const auto & p : pairs) fprintf(mf, "%d %d\n", p.first, p.second);
-        fclose(mf);
 
         // output beside the model: <stem>-REAPED[-n].gguf, never overwriting
         std::string out = args.model;
@@ -678,7 +705,7 @@ static int run_server(Generator & G, const args_t & args) {
             if (stat(path.c_str(), &st) != 0) break;
             path = out + "-REAPED-" + std::to_string(i) + ".gguf";
         }
-        const std::string cmd = "python3 " + shq(args.reap_script) + " " + shq(args.model) + " " +
+        const std::string cmd = mask_cmd + "python3 " + shq(args.reap_script) + " " + shq(args.model) + " " +
                                 shq(path) + " --mask " + shq(maskp) + " 2>&1";
         reap_job.running = true;
         {
@@ -700,7 +727,8 @@ static int run_server(Generator & G, const args_t & args) {
             reap_job.exit_code = (rc >= 256) ? rc / 256 : rc; // WEXITSTATUS-ish, portable enough
             reap_job.running = false;
         }).detach();
-        fprintf(stderr, "reap started -> %s (%zu pairs)\n", path.c_str(), pairs.size());
+        if (set.empty()) fprintf(stderr, "reap started -> %s (%zu pairs)\n", path.c_str(), pairs.size());
+        else             fprintf(stderr, "reap started -> %s (corpus set '%s')\n", path.c_str(), set.c_str());
         res.set_content(json{{"started", true}, {"output", path}}.dump(), "application/json");
     });
     svr.Get("/reap", [&](const httplib::Request &, httplib::Response & res) {

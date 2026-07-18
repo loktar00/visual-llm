@@ -35,7 +35,7 @@ below works before you ever touch a GPU.
 | `r` | **reap lens** — dims the art and marks cold experts ⊘ and pruned experts ✕ in-place |
 | `m` | **mask editor** — click experts in any style to hand-pick a reap; drag paints, alt-drag erases |
 | `e` | export the mask (hand-picked if present, else the lens candidates) |
-| `s` | connect to a capture server: browse recordings, prompt the model from the UI, apply your mask live |
+| `s` | connect to a capture server: browse recordings (including whole recorded corpora), prompt the model from the UI, apply your mask live, reap with one click |
 | drag & drop | load any `.jsonl` recording |
 
 ![Token Flow view of a reaped model with the reap lens on](docs/img/token-flow-reap-lens.jpg)
@@ -68,7 +68,11 @@ cmake -B build -DGGML_CUDA=ON && cmake --build build --target visual-llm-capture
 ```
 
 Drag `run.jsonl` onto `index.html`. Any MoE GGUF works (Qwen3 MoE family,
-GPT-OSS, Mixtral, OLMoE, DeepSeek, …).
+GPT-OSS, Mixtral, OLMoE, DeepSeek, …). To record a whole *corpus* in one go,
+point `--prompts-dir` at a directory of prompt files (one prompt per file —
+see `prompts/` for the convention, a ready-made canvas-graphics set, and a
+Hugging Face datasets bridge): the model loads once and writes one named
+recording per prompt.
 
 Even better: run it as an **OpenAI-compatible server** (`--server`) — every
 chat request writes a recording, it slots into
@@ -82,10 +86,15 @@ seconds later. Full instructions: **[capture/README.md](capture/README.md)**.
 Cold experts carry almost none of the routed weight — so prune them. The full
 loop, each step validated by the previous one:
 
-1. **Observe** — chat through the tracking model; recordings accumulate.
+1. **Observe** — chat through the tracking model, or batch a domain corpus
+   with `--prompts-dir` into a subdirectory of the capture dir (it shows up
+   as a browsable `set/` prefix in the `s` panel).
 2. **Determine** — `make_mask.py runs/*.jsonl -o reap-mask.txt` aggregates
    router mass across a corpus and masks each layer's coldest experts. It
-   prints the % of total routed mass you'd cut — lower is safer.
+   prints the % of total routed mass you'd cut — lower is safer. Corpus size
+   matters: one prompt's coldest 25% carried ~2.5% of routed mass in our
+   tests, a 66-prompt domain corpus's coldest 25% carried ~14% — the corpus
+   tells you the truth about what the domain actually needs.
 3. **Rehearse** — run with `--mask reap-mask.txt` (CLI or server): masked
    experts' router logits are forced to −∞, which is *mathematically
    identical* to inference-time pruning. Same weights, live A/B against the
@@ -93,15 +102,22 @@ loop, each step validated by the previous one:
    **click experts in the visualization** (seed from the lens's candidates,
    then refine by hand), hit *apply to server*, and your next prompt runs
    as-if-reaped — the recording comes back wearing the scars you chose.
-4. **Commit** — from the UI (*reap gguf* button: balances your selection to a
-   uniform per-layer count, runs the surgery on the server, streams progress)
-   or by hand: `reap_gguf.py model.gguf smaller.gguf --mask …` physically
-   slices the pruned experts out of the quantized GGUF (byte-exact, no
-   requantization) and fixes the router + metadata. Verified on a 35B-A3B:
-   **256 → 192 experts, 22.7 GB → 17.6 GB (−22%)**, with routing differences
-   from the masked original *below the CPU-vs-GPU noise floor of the very
-   same model*.
+4. **Commit** — **one click**: set *mask from* to a recorded corpus in the
+   `s` panel, choose the coldness fraction with the slider (a size estimate
+   updates live), hit *reap gguf* — the server aggregates the corpus mask and
+   runs the surgery, streaming progress back to the UI. (Or reap your
+   hand-picked selection, or run `reap_gguf.py model.gguf smaller.gguf
+   --mask …` by hand.) The surgery physically slices the pruned experts out
+   of the quantized GGUF (byte-exact, no requantization) and fixes the
+   router + metadata. Verified on a 35B-A3B: **256 → 192 experts,
+   22.7 GB → 17.6 GB (−22%)**, with routing differences from the masked
+   original *below the CPU-vs-GPU noise floor of the very same model*.
 5. **Serve** the smaller GGUF like any normal model.
+6. **(Optional) Heal** — `reap_hf.py` applies the same mask to the original
+   safetensors checkpoint (71.9 → 55.4 GB bf16 on the same 35B), giving you a
+   full-precision pruned model ready for QLoRA on your domain data:
+   prune → finetune → requantize → a specialist that costs a fraction of the
+   original. That's the road this repo is walking.
 
 Details, guard rails, and the validation methodology:
 [capture/README.md](capture/README.md).
@@ -113,7 +129,9 @@ index.html, css/, js/     the viewer — static, no build, works over file://
 js/styles/*.js            the twelve visualizations (see STYLE_GUIDE.md)
 SCHEMA.md                 the JSONL recording format
 capture/                  llama.cpp capture tool (CLI + server), make_mask.py,
-                          reap_gguf.py, and their documentation
+                          reap_gguf.py, reap_hf.py, and their documentation
+prompts/                  prompt-set convention + a canvas-graphics corpus,
+                          for capturing a domain in one command
 ```
 
 ## License
