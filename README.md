@@ -93,7 +93,9 @@ loop, each step validated by the previous one:
    **click experts in the visualization** (seed from the lens's candidates,
    then refine by hand), hit *apply to server*, and your next prompt runs
    as-if-reaped — the recording comes back wearing the scars you chose.
-4. **Commit** — `reap_gguf.py model.gguf smaller.gguf --mask …` physically
+4. **Commit** — from the UI (*reap gguf* button: balances your selection to a
+   uniform per-layer count, runs the surgery on the server, streams progress)
+   or by hand: `reap_gguf.py model.gguf smaller.gguf --mask …` physically
    slices the pruned experts out of the quantized GGUF (byte-exact, no
    requantization) and fixes the router + metadata. Verified on a 35B-A3B:
    **256 → 192 experts, 22.7 GB → 17.6 GB (−22%)**, with routing differences

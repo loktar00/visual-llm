@@ -379,6 +379,7 @@ struct args_t {
     std::string alias;        // served model id (default: model general.name)
     bool        jinja = false;
     std::string chat_kwargs;  // --chat-template-kwargs '{"enable_thinking": false}'
+    std::string reap_script = "reap_gguf.py"; // --reap-script: path for POST /reap
     // generation / model
     int   n_predict = 200, n_ctx = 4096, ngl = 99, threads = 0, top_k = 40;
     float top_p = 0.95f, temp = 0.8f;
@@ -425,6 +426,7 @@ static args_t parse_args(int argc, char ** argv) {
         else if (k == "--alias")        a.alias     = next("--alias");
         else if (k == "--jinja")        a.jinja     = true;
         else if (k == "--chat-template-kwargs") a.chat_kwargs = next("--chat-template-kwargs");
+        else if (k == "--reap-script")  a.reap_script = next("--reap-script");
         else if (k == "--mask-pairs") {
             const char * s = next("--mask-pairs");
             int l, e;
@@ -603,6 +605,97 @@ static int run_server(Generator & G, const args_t & args) {
         const int applied = G.apply_mask_pairs(pairs);
         fprintf(stderr, "mask updated via API: %d experts masked\n", applied);
         res.set_content(json{{"applied", applied}, {"active", G.cap.mask_active}}.dump(), "application/json");
+    });
+
+    // ---- physical reap: run reap_gguf.py on the loaded model, async ----
+    struct reap_job_t {
+        std::atomic<bool> running{false};
+        std::mutex mx;
+        std::string log;
+        std::string output;
+        int exit_code = -1;
+    };
+    static reap_job_t reap_job;
+    auto shq = [](const std::string & s) { // single-quote for sh
+        std::string out = "'";
+        for (char c : s) out += (c == '\'') ? std::string("'\\''") : std::string(1, c);
+        return out + "'";
+    };
+
+    svr.Post("/reap", [&, shq](const httplib::Request & req, httplib::Response & res) {
+        json body;
+        try { body = json::parse(req.body); }
+        catch (...) { res.status = 400; res.set_content("{\"error\":\"bad json\"}", "application/json"); return; }
+        if (reap_job.running) {
+            res.status = 409;
+            res.set_content("{\"error\":\"a reap is already running\"}", "application/json");
+            return;
+        }
+        if (args.model.find("-of-00") != std::string::npos) {
+            res.status = 400;
+            res.set_content(json{{"error", "this model is a sharded gguf — merge it first "
+                                           "(llama-gguf-split --merge), then serve the merged file"}}.dump(), "application/json");
+            return;
+        }
+        std::vector<std::pair<int,int>> pairs;
+        if (body.contains("pairs") && body["pairs"].is_array())
+            for (auto & p : body["pairs"])
+                if (p.is_array() && p.size() >= 2) pairs.push_back({p[0].get<int>(), p[1].get<int>()});
+        if (pairs.empty()) {
+            res.status = 400;
+            res.set_content("{\"error\":\"no mask pairs\"}", "application/json");
+            return;
+        }
+        const std::string maskp = args.capture_dir + "/reap-mask-ui.txt";
+        FILE * mf = fopen(maskp.c_str(), "wb");
+        if (!mf) { res.status = 500; res.set_content("{\"error\":\"cannot write mask file\"}", "application/json"); return; }
+        fprintf(mf, "# visual-llm reap mask — set from the UI\n");
+        for (const auto & p : pairs) fprintf(mf, "%d %d\n", p.first, p.second);
+        fclose(mf);
+
+        // output beside the model: <stem>-REAPED[-n].gguf, never overwriting
+        std::string out = args.model;
+        const size_t dot = out.rfind(".gguf");
+        if (dot != std::string::npos) out = out.substr(0, dot);
+        std::string path = out + "-REAPED.gguf";
+        for (int i = 2; i < 100; i++) {
+            struct stat st {};
+            if (stat(path.c_str(), &st) != 0) break;
+            path = out + "-REAPED-" + std::to_string(i) + ".gguf";
+        }
+        const std::string cmd = "python3 " + shq(args.reap_script) + " " + shq(args.model) + " " +
+                                shq(path) + " --mask " + shq(maskp) + " 2>&1";
+        reap_job.running = true;
+        {
+            std::lock_guard<std::mutex> lk(reap_job.mx);
+            reap_job.log.clear();
+            reap_job.output = path;
+            reap_job.exit_code = -1;
+        }
+        std::thread([cmd]() {
+            FILE * p = popen(cmd.c_str(), "r");
+            char line[512];
+            while (p && fgets(line, sizeof(line), p)) {
+                std::lock_guard<std::mutex> lk(reap_job.mx);
+                reap_job.log += line;
+                if (reap_job.log.size() > 16384) reap_job.log.erase(0, reap_job.log.size() - 16384);
+            }
+            const int rc = p ? pclose(p) : -1;
+            std::lock_guard<std::mutex> lk(reap_job.mx);
+            reap_job.exit_code = (rc >= 256) ? rc / 256 : rc; // WEXITSTATUS-ish, portable enough
+            reap_job.running = false;
+        }).detach();
+        fprintf(stderr, "reap started -> %s (%zu pairs)\n", path.c_str(), pairs.size());
+        res.set_content(json{{"started", true}, {"output", path}}.dump(), "application/json");
+    });
+    svr.Get("/reap", [&](const httplib::Request &, httplib::Response & res) {
+        std::lock_guard<std::mutex> lk(reap_job.mx);
+        res.set_content(json{
+            {"running", reap_job.running.load()},
+            {"exit_code", reap_job.exit_code},
+            {"output", reap_job.output},
+            {"log", reap_job.log},
+        }.dump(), "application/json");
     });
 
     svr.Get(R"(/captures/([^/]+))", [&](const httplib::Request & req, httplib::Response & res) {

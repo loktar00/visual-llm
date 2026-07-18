@@ -19,6 +19,7 @@
     const params = new URLSearchParams(location.search);
     const engine = new VLM.ReplayEngine(canvas);
     engine.attachLensCanvas($('lensCanvas'));
+    window.vllmEngine = engine; // console/debug handle
 
     /* ---------- recordings ---------- */
 
@@ -370,6 +371,75 @@
       } catch (err) {
         console.error(err);
         srvStatus.textContent = 'mask apply failed — see console';
+      }
+    });
+
+    /* ---------- physical reap from the UI ---------- */
+
+    // llama.cpp needs a uniform expert count per layer, so the selection is
+    // balanced: every layer trimmed to the same N, keeping its coldest picks.
+    function balancedMask() {
+      const src = manualMask.size ? maskPairs() : engine.getReapCandidates();
+      if (!src.length) return { error: 'no mask — seed from lens or click experts first' };
+      const per = new Map();
+      src.forEach(([l, e]) => { if (!per.has(l)) per.set(l, []); per.get(l).push(e); });
+      const nL = engine.model.nLayers;
+      if (per.size < nL) {
+        return { error: `selections cover ${per.size}/${nL} layers — a physical reap needs every layer (try "seed from lens" first)` };
+      }
+      const n = Math.min(...[...per.values()].map((a) => a.length));
+      const nE = engine.model.nExperts;
+      let trimmed = 0;
+      const pairs = [];
+      for (const [l, es] of per) {
+        es.sort((a, b) => engine.usage[l * nE + a] - engine.usage[l * nE + b]);
+        trimmed += es.length - n;
+        es.slice(0, n).forEach((e) => pairs.push([l, e]));
+      }
+      pairs.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+      return { pairs, n, trimmed };
+    }
+
+    const btnReap = $('maskReap');
+    let reapArmed = null;
+    btnReap.addEventListener('click', async () => {
+      if (!srvBase()) { srvStatus.textContent = 'enter the capture server url'; return; }
+      const b = balancedMask();
+      if (b.error) { toast(b.error); return; }
+      if (!reapArmed) {
+        toast(`this will write a NEW gguf with ${b.n} experts cut from every layer` +
+          `${b.trimmed ? ` (${b.trimmed} picks trimmed to balance)` : ''} — the original is untouched. Click again to run.`);
+        btnReap.textContent = 'sure? click again';
+        reapArmed = setTimeout(() => { reapArmed = null; btnReap.textContent = 'reap gguf'; }, 8000);
+        return;
+      }
+      clearTimeout(reapArmed);
+      reapArmed = null;
+      btnReap.textContent = 'reap gguf';
+      try {
+        const r = await fetch(srvBase() + '/reap', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pairs: b.pairs }),
+        });
+        const d = await r.json();
+        if (!r.ok || d.error) { toast('reap refused: ' + (d.error || r.status)); return; }
+        srvStatus.textContent = 'reaping…';
+        const poll = setInterval(async () => {
+          try {
+            const s = await (await fetch(srvBase() + '/reap')).json();
+            const lines = (s.log || '').trim().split('\n');
+            srvStatus.textContent = s.running ? ('reap: ' + lines[lines.length - 1]) : '';
+            if (!s.running) {
+              clearInterval(poll);
+              if (s.exit_code === 0) toast('reaped ✂ → ' + s.output, 9000);
+              else { toast('reap failed — details in console'); console.error('reap log:\n' + s.log); }
+            }
+          } catch { clearInterval(poll); }
+        }, 3000);
+      } catch (err) {
+        console.error(err);
+        srvStatus.textContent = 'reap request failed — see console';
       }
     });
 
