@@ -128,7 +128,8 @@ html, body {
 /* ---------- capture server panel ---------- */
 
 #serverWrap {
-  position: fixed; right: 24px; bottom: 96px; width: 340px;
+  position: fixed; right: 24px; bottom: 96px; width: 408px;
+  max-width: calc(100vw - 48px);
   padding: 12px;
   background: var(--glass);
   border: 1px solid var(--glass-border);
@@ -137,7 +138,7 @@ html, body {
   -webkit-backdrop-filter: blur(12px);
   display: flex; flex-direction: column; gap: 8px;
 }
-.srvRow { display: flex; gap: 6px; align-items: center; }
+.srvRow { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 #srvUrl {
   flex: 1; background: rgba(8, 12, 24, 0.8); color: var(--fg);
   border: 1px solid var(--glass-border); border-radius: 8px;
