@@ -368,6 +368,7 @@ struct args_t {
     std::string model;
     std::string prompt = "Once upon a time";
     std::string prompts_file;
+    std::string prompts_dir; // --prompts-dir: one prompt per .txt/.md file
     std::string out = "capture.jsonl";
     std::string mask_path;
     std::vector<std::pair<int,int>> mask_pairs;
@@ -409,6 +410,7 @@ static args_t parse_args(int argc, char ** argv) {
         if      (k == "-m")             a.model     = next("-m");
         else if (k == "-p")             a.prompt    = next("-p");
         else if (k == "--prompts-file") a.prompts_file = next("--prompts-file");
+        else if (k == "--prompts-dir")  a.prompts_dir  = next("--prompts-dir");
         else if (k == "-o")             a.out       = next("-o");
         else if (k == "-n")             a.n_predict = atoi(next("-n"));
         else if (k == "-c")             a.n_ctx     = atoi(next("-c"));
@@ -817,38 +819,81 @@ static int run_server(Generator & G, const args_t & args) {
 
 // ---------------------------------------------------------------- cli mode --
 
+// read a whole prompt file; strips YAML frontmatter (--- ... ---) from .md
+static std::string read_prompt_file(const std::string & path) {
+    FILE * f = fopen(path.c_str(), "rb");
+    if (!f) return "";
+    std::string s;
+    char buf[8192];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), f)) > 0) s.append(buf, n);
+    fclose(f);
+    if (s.rfind("---", 0) == 0) {
+        const size_t end = s.find("\n---", 3);
+        if (end != std::string::npos) {
+            const size_t nl = s.find('\n', end + 1);
+            s = (nl != std::string::npos) ? s.substr(nl + 1) : "";
+        }
+    }
+    size_t a = s.find_first_not_of(" \t\r\n");
+    size_t b = s.find_last_not_of(" \t\r\n");
+    return a == std::string::npos ? "" : s.substr(a, b - a + 1);
+}
+
 static int run_cli(Generator & G, const args_t & args) {
-    std::vector<std::string> prompts;
-    if (!args.prompts_file.empty()) {
+    std::vector<std::pair<std::string, std::string>> prompts; // {name, text}
+    if (!args.prompts_dir.empty()) {
+        std::vector<std::string> files;
+        if (DIR * d = opendir(args.prompts_dir.c_str())) {
+            while (dirent * ent = readdir(d)) {
+                const std::string fn = ent->d_name;
+                if (fn.size() > 3 && (fn.substr(fn.size() - 3) == ".md" || fn.substr(fn.size() - 4) == ".txt"))
+                    files.push_back(fn);
+            }
+            closedir(d);
+        } else { fprintf(stderr, "cannot open prompts dir: %s\n", args.prompts_dir.c_str()); return 1; }
+        std::sort(files.begin(), files.end());
+        for (const auto & fn : files) {
+            const std::string text = read_prompt_file(args.prompts_dir + "/" + fn);
+            if (text.empty()) { fprintf(stderr, "skipping empty prompt: %s\n", fn.c_str()); continue; }
+            std::string stem = fn.substr(0, fn.rfind('.'));
+            prompts.push_back({stem, text});
+        }
+        if (prompts.empty()) { fprintf(stderr, "no .md/.txt prompts in %s\n", args.prompts_dir.c_str()); return 1; }
+    } else if (!args.prompts_file.empty()) {
         FILE * pf = fopen(args.prompts_file.c_str(), "rb");
         if (!pf) { fprintf(stderr, "cannot open prompts file: %s\n", args.prompts_file.c_str()); return 1; }
         char pl[4096];
+        int idx = 0;
         while (fgets(pl, sizeof(pl), pf)) {
             std::string s(pl);
             while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) s.pop_back();
-            if (!s.empty() && s[0] != '#') prompts.push_back(s);
+            if (s.empty() || s[0] == '#') continue;
+            char nm[16];
+            snprintf(nm, sizeof(nm), "%03d", idx++);
+            prompts.push_back({nm, s});
         }
         fclose(pf);
         if (prompts.empty()) { fprintf(stderr, "prompts file has no prompts\n"); return 1; }
-    } else prompts.push_back(args.prompt);
+    } else prompts.push_back({"", args.prompt});
 
     for (size_t pi = 0; pi < prompts.size(); pi++) {
-        std::vector<llama_token> ptoks = G.tokenize(prompts[pi], true);
+        std::vector<llama_token> ptoks = G.tokenize(prompts[pi].second, true);
         if (ptoks.empty()) continue;
-        fprintf(stderr, "\n[%d/%d] %d prompt tokens\n", (int) pi + 1, (int) prompts.size(), (int) ptoks.size());
+        fprintf(stderr, "\n[%d/%d] %s%s%d prompt tokens\n", (int) pi + 1, (int) prompts.size(),
+                prompts[pi].first.c_str(), prompts[pi].first.empty() ? "" : ": ", (int) ptoks.size());
         gen_result r = G.generate(ptoks, G.def, [](const std::string & p) { fputs(p.c_str(), stderr); fflush(stderr); });
         fputs("\n", stderr);
         if (!r.error.empty()) { fprintf(stderr, "generation error: %s\n", r.error.c_str()); return 1; }
 
         std::string path = args.out;
-        if (prompts.size() > 1) {
+        if (!prompts[pi].first.empty()) {
             std::string base = path;
             const size_t dot = base.rfind(".jsonl");
             if (dot != std::string::npos) base = base.substr(0, dot);
-            char pbuf[640]; snprintf(pbuf, sizeof(pbuf), "%s-%03d.jsonl", base.c_str(), (int) pi);
-            path = pbuf;
+            path = base + "-" + prompts[pi].first + ".jsonl";
         }
-        G.write_recording(path, prompts[pi], r);
+        G.write_recording(path, prompts[pi].second, r);
         fprintf(stderr, "wrote %s: %d tokens\n", path.c_str(), r.n_tokens);
     }
     fprintf(stderr, "\ndone: %d recording(s), %d MoE layers, %d experts\n",

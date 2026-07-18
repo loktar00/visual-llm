@@ -181,6 +181,12 @@ python make_mask.py runs/full-*.jsonl -o reap-mask.txt --frac 0.25
 seed for every prompt, so a full run and a masked run of the same prompt file
 differ only by the mask.
 
+For multi-line prompts, use **`--prompts-dir`** instead: point it at a
+directory of `.md`/`.txt` files (one prompt per file, YAML frontmatter
+stripped), and recordings are named after the files. See `../prompts/` for
+the convention and a ready-made canvas-js sample set, and `hf_prompts.py`
+for dumping Hugging Face dataset columns into a set.
+
 ## Physical reaping — actually shrink the GGUF (`reap_gguf.py`)
 
 Once a mask has proven itself (good text under the `-reaped` sim across a real
