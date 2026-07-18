@@ -148,6 +148,13 @@
       this.canvas.width = Math.round(this.w * this.dpr);
       this.canvas.height = Math.round(this.h * this.dpr);
       this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      // view inset: styles render through this transform so the art clears
+      // the HUD (top) and the control bar (bottom); the engine paints the
+      // border in the style's background color each frame
+      const padX = 32, padTop = 96, padBottom = 112;
+      this.vScale = Math.min((this.w - padX * 2) / this.w, (this.h - padTop - padBottom) / this.h);
+      this.vOx = (this.w - this.w * this.vScale) / 2;
+      this.vOy = padTop + (this.h - padTop - padBottom - this.h * this.vScale) / 2;
     }
 
     _styleFail(e) {
@@ -331,7 +338,7 @@
       let best = null, bestD = radius * radius;
       for (let l = 0; l < this.nL; l++) {
         for (let e = 0; e < this.nE; e++) {
-          const p = this._safeNodePos(style, l, e);
+          const p = this._safeNodePos(style, l, e); // screen space, like x/y
           if (!p) continue;
           const dx = p[0] - x, dy = p[1] - y;
           const d = dx * dx + dy * dy;
@@ -376,8 +383,12 @@
       ctx.textAlign = 'left';
     }
 
+    // style-space node position mapped into screen space (view inset applied)
     _safeNodePos(style, l, e) {
-      try { return style.nodePos(l, e); } catch { return null; }
+      try {
+        const p = style.nodePos(l, e);
+        return p ? [p[0] * this.vScale + this.vOx, p[1] * this.vScale + this.vOy] : null;
+      } catch { return null; }
     }
 
     _label(ctx, text, x, y, hue, alpha, arrow) {
@@ -570,12 +581,24 @@
       f.tokensDone = this.tokensDoneCount;
       f.totalTokens = this.rec.tokens.length;
 
+      const s = this.vScale;
+      this.ctx.setTransform(this.dpr * s, 0, 0, this.dpr * s, this.dpr * this.vOx, this.dpr * this.vOy);
       try {
         this.style.render(f);
         this._styleErrors = 0;
       } catch (e) {
         if (++this._styleErrors > 2) this._styleFail(e);
       }
+      // border band around the inset view, in the style's own background
+      this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      this.ctx.globalCompositeOperation = 'source-over';
+      this.ctx.globalAlpha = 1;
+      this.ctx.fillStyle = this.style.bg;
+      const vw = this.w * s, vh = this.h * s;
+      this.ctx.fillRect(0, 0, this.w, this.vOy);
+      this.ctx.fillRect(0, this.vOy + vh, this.w, this.h - this.vOy - vh);
+      this.ctx.fillRect(0, this.vOy, this.vOx, vh);
+      this.ctx.fillRect(this.vOx + vw, this.vOy, this.w - this.vOx - vw, vh);
       this._drawOverlay();
       if (this.onTick) this.onTick(f);
     }

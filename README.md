@@ -5,7 +5,7 @@
 Every token an MoE model processes is routed through a handful of "experts"
 per layer. visual-llm records those routing decisions from a real model
 running on [llama.cpp](https://github.com/ggml-org/llama.cpp) and replays
-them as light flowing through eleven visualizations — a spider web, a brain,
+them as light flowing through twelve visualizations — a spider web, a brain, a self-sorting gravity well,
 a galaxy, a metro map, a cathedral window… Heat accumulates where
 the router lives; experts nobody visits stay dark. Those dark cells are
 prunable — and this repo takes you all the way from *seeing* them to
@@ -28,7 +28,7 @@ below works before you ever touch a GPU.
 
 | Input | Action |
 | --- | --- |
-| `←` / `→`, `1`–`9` | switch visual style (11 styles, auto-cycles by default) |
+| `←` / `→`, `1`–`9` | switch visual style (12 styles, auto-cycles by default) |
 | `space` / drag bar | pause / scrub the replay |
 | `t` | token labels — input text at the entry, produced token at the exit |
 | `u` | expert usage heatmap overlay (cold cells = reap candidates) |
@@ -110,7 +110,7 @@ Details, guard rails, and the validation methodology:
 
 ```
 index.html, css/, js/     the viewer — static, no build, works over file://
-js/styles/*.js            the eleven visualizations (see STYLE_GUIDE.md)
+js/styles/*.js            the twelve visualizations (see STYLE_GUIDE.md)
 SCHEMA.md                 the JSONL recording format
 capture/                  llama.cpp capture tool (CLI + server), make_mask.py,
                           reap_gguf.py, and their documentation

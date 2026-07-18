@@ -127,6 +127,7 @@ html, body {
 
 /* ---------- capture server panel ---------- */
 
+#serverWrap[hidden] { display: none; } /* author display:flex would otherwise beat the hidden attribute */
 #serverWrap {
   position: fixed; right: 24px; bottom: 96px; width: 408px;
   max-width: calc(100vw - 48px);

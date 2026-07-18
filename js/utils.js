@@ -81,11 +81,20 @@
 
   // Trail fade: paint a translucent rect of the style's background color.
   // Called at the top of render() instead of clearing — motion leaves streaks.
+  //
+  // The 'difference' pass matters: alpha blending quantizes to 8 bits, so
+  // pixels a few levels above the background round back to themselves and
+  // freeze as permanent ghost trails. Subtracting exactly 1 level per frame
+  // guarantees residue melts away (a bright trail loses far more than 1 per
+  // frame to the fade itself, so the look is unchanged).
   VLM.fade = function (ctx, w, h, alpha, rgb) {
     ctx.save();
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
     ctx.fillStyle = `rgba(${rgb || '4,6,12'},${alpha})`;
+    ctx.fillRect(0, 0, w, h);
+    ctx.globalCompositeOperation = 'difference';
+    ctx.fillStyle = 'rgb(1,1,1)';
     ctx.fillRect(0, 0, w, h);
     ctx.restore();
   };
