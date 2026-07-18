@@ -565,20 +565,31 @@ static int run_server(Generator & G, const args_t & args) {
     });
     svr.Options(R"(/.*)", [](const httplib::Request &, httplib::Response & res) { res.status = 204; });
 
-    // recording browser for the frontend: list + fetch
+    // recording browser for the frontend: list + fetch (one subdir level deep,
+    // so corpus runs like captures/canvas/run-*.jsonl are browsable too)
     svr.Get("/captures", [&](const httplib::Request &, httplib::Response & res) {
         struct entry { std::string name; long long bytes; long long mtime; };
         std::vector<entry> list;
-        if (DIR * d = opendir(args.capture_dir.c_str())) {
-            while (dirent * ent = readdir(d)) {
-                std::string fn = ent->d_name;
-                if (fn.size() < 7 || fn.substr(fn.size() - 6) != ".jsonl") continue;
-                struct stat st {};
-                if (stat((args.capture_dir + "/" + fn).c_str(), &st) != 0) continue;
-                list.push_back({fn, (long long) st.st_size, (long long) st.st_mtime});
+        std::function<void(const std::string &)> scan = [&](const std::string & sub) {
+            const std::string dir = sub.empty() ? args.capture_dir : args.capture_dir + "/" + sub;
+            if (DIR * d = opendir(dir.c_str())) {
+                while (dirent * ent = readdir(d)) {
+                    std::string fn = ent->d_name;
+                    if (fn == "." || fn == "..") continue;
+                    const std::string rel = sub.empty() ? fn : sub + "/" + fn;
+                    struct stat st {};
+                    if (stat((args.capture_dir + "/" + rel).c_str(), &st) != 0) continue;
+                    if (S_ISDIR(st.st_mode)) {
+                        if (sub.empty()) scan(rel); // one level only
+                        continue;
+                    }
+                    if (fn.size() < 7 || fn.substr(fn.size() - 6) != ".jsonl") continue;
+                    list.push_back({rel, (long long) st.st_size, (long long) st.st_mtime});
+                }
+                closedir(d);
             }
-            closedir(d);
-        }
+        };
+        scan("");
         std::sort(list.begin(), list.end(), [](const entry & a, const entry & b) { return a.mtime > b.mtime; });
         json arr = json::array();
         for (const auto & e : list) arr.push_back({{"name", e.name}, {"bytes", e.bytes}, {"mtime", e.mtime}});
@@ -702,9 +713,11 @@ static int run_server(Generator & G, const args_t & args) {
         }.dump(), "application/json");
     });
 
-    svr.Get(R"(/captures/([^/]+))", [&](const httplib::Request & req, httplib::Response & res) {
+    svr.Get(R"(/captures/(.+))", [&](const httplib::Request & req, httplib::Response & res) {
         const std::string fn = req.matches[1];
-        if (fn.find("..") != std::string::npos || fn.find('/') != std::string::npos || fn.find('\\') != std::string::npos) {
+        // allow at most one subdir level; forbid traversal and absolute paths
+        if (fn.find("..") != std::string::npos || fn.find('\\') != std::string::npos ||
+            fn.empty() || fn[0] == '/' || std::count(fn.begin(), fn.end(), '/') > 1) {
             res.status = 400;
             return;
         }
