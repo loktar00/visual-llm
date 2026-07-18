@@ -5,8 +5,8 @@
 Every token an MoE model processes is routed through a handful of "experts"
 per layer. visual-llm records those routing decisions from a real model
 running on [llama.cpp](https://github.com/ggml-org/llama.cpp) and replays
-them as light flowing through fifteen artistic visualizations — a spider web,
-a brain, a galaxy, a metro map, a cathedral window… Heat accumulates where
+them as light flowing through eleven visualizations — a spider web, a brain,
+a galaxy, a metro map, a cathedral window… Heat accumulates where
 the router lives; experts nobody visits stay dark. Those dark cells are
 prunable — and this repo takes you all the way from *seeing* them to
 **physically cutting them out of the GGUF**.
@@ -28,7 +28,7 @@ below works before you ever touch a GPU.
 
 | Input | Action |
 | --- | --- |
-| `←` / `→`, `1`–`9` | switch visual style (15 styles, auto-cycles by default) |
+| `←` / `→`, `1`–`9` | switch visual style (11 styles, auto-cycles by default) |
 | `space` / drag bar | pause / scrub the replay |
 | `t` | token labels — input text at the entry, produced token at the exit |
 | `u` | expert usage heatmap overlay (cold cells = reap candidates) |
@@ -48,7 +48,7 @@ candidates (⊘).*
 <img src="docs/img/spiral-galaxy.jpg" width="49%" alt="Spiral Galaxy style"/>
 </p>
 <p>
-<img src="docs/img/blueprint.jpg" width="49%" alt="Blueprint style"/>
+<img src="docs/img/bonsai.jpg" width="49%" alt="Bonsai style"/>
 <img src="docs/img/ui-server-panel.jpg" width="49%" alt="in-UI capture server panel"/>
 </p>
 
@@ -110,7 +110,7 @@ Details, guard rails, and the validation methodology:
 
 ```
 index.html, css/, js/     the viewer — static, no build, works over file://
-js/styles/*.js            the fifteen visualizations (see STYLE_GUIDE.md)
+js/styles/*.js            the eleven visualizations (see STYLE_GUIDE.md)
 SCHEMA.md                 the JSONL recording format
 capture/                  llama.cpp capture tool (CLI + server), make_mask.py,
                           reap_gguf.py, and their documentation

@@ -1,4 +1,4 @@
-/* visual-llm style: Windswept Bonsai — the model as a living, wind-leaning tree.
+/* visual-llm style: Bonsai — the model as a living tree, grown straight and full.
    A single organic fractal tree is grown once in init from the seeded rng and
    baked into an offscreen canvas as deep umber bark. Sample points collected
    along every branch are sorted by their path-distance from the root and split
@@ -19,8 +19,8 @@
 
   const S = {
     id: 'bonsai',
-    name: 'Windswept Bonsai',
-    blurb: 'the model as a windswept tree — sap-light climbs the wood and the canopy flowers where routing lives',
+    name: 'Bonsai',
+    blurb: 'the model as an upright tree — sap-light climbs the wood and the canopy flowers where routing lives',
     bg: '#080604',
     fadeRGB: '8,6,4',
 
@@ -39,7 +39,7 @@
 
       const nL = model.nLayers;
       const nE = model.nExperts;
-      const rootX = (this.rootX = w * 0.44 + (rng() - 0.5) * w * 0.04);
+      const rootX = (this.rootX = w * 0.5 + (rng() - 0.5) * w * 0.02);
       const rootY = (this.rootY = h * 0.9);
       this.swayAmp = Math.max(4, Math.min(w, h) * 0.008);
 
@@ -97,20 +97,22 @@
       };
 
       // grow one branch (a gently curved, tapering run of segments) then split.
-      // windLean gently biases every angle downwind (to the right) so the whole
-      // silhouette leans; sway later moves tips more than the trunk.
+      // Children spread symmetrically and every angle is pulled gently back
+      // toward vertical, so the tree stands straight and columnar; sway later
+      // moves tips more than the trunk.
+      const UP = -Math.PI / 2;
       const grow = (x, y, angle, length, width, depth, dist) => {
         if (depth > MAX_DEPTH || width < 0.5) return;
         const segs = clamp(6 - depth, 2, 6);
         const segLen = length / segs;
         const endW = width * 0.62;
         const col = barkColor(depth, rng());
-        const windLean = 0.02;
         let px = x;
         let py = y;
         let a = angle;
         for (let s = 0; s < segs; s++) {
-          a += (rng() - 0.5) * 0.18 + windLean;
+          a += (rng() - 0.5) * 0.18;
+          a = lerp(a, UP, 0.06); // heliotropic pull upright
           const w0 = lerp(width, endW, s / segs);
           const w1 = lerp(width, endW, (s + 1) / segs);
           const nx = px + Math.cos(a) * segLen;
@@ -130,15 +132,17 @@
         }
 
         if (depth === MAX_DEPTH) return;
-        const spread = 0.4 + rng() * 0.35;
-        const nCh = depth >= 2 && depth <= 5 && rng() < 0.18 ? 3 : 2;
+        const spread = 0.42 + rng() * 0.3;
+        // fuller crown: three-way splits are common, symmetric around the parent
+        const nCh = depth >= 1 && rng() < 0.5 ? 3 : 2;
+        const mirror = rng() < 0.5 ? -1 : 1; // alternate which side gets the wider fork
         for (let c = 0; c < nCh; c++) {
           let off;
-          if (nCh === 2) off = c === 0 ? -spread * 0.45 : spread * 0.8;
-          else off = (c - 1) * spread * 0.85;
-          const childA = a + off + windLean * 4;
-          const childLen = length * (0.72 + rng() * 0.12);
-          const childW = width * (0.64 + rng() * 0.08);
+          if (nCh === 2) off = (c === 0 ? -spread : spread * 0.7) * mirror;
+          else off = (c - 1) * spread * 0.9;
+          const childA = lerp(a + off, UP, 0.1); // keep growth reaching upward
+          const childLen = length * (0.7 + rng() * 0.12);
+          const childW = width * (0.62 + rng() * 0.08);
           grow(px, py, childA, childLen, childW, depth + 1, dist);
         }
       };
