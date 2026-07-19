@@ -42,3 +42,11 @@ python capture/hf_prompts.py HuggingFaceH4/no_robots --column prompt \
 toys, autonomous sims) — a domain-calibration example. Pair it with your own
 prompts in the same style; ~60–100 diverse prompts is plenty to separate hot
 experts from cold on a 256-expert model.
+
+## Included set: `frontend-web/`
+
+36 prompts for frontend design work — component and page-level "pretty" UI
+(glassmorphic cards, dashboards, pricing tables, pure-CSS art, type
+specimens), all single-file and dependency-free. Deliberately adjacent to
+`canvas-js/`: capture both against the same model and compare the masks to
+see how much two related-but-different domains share their expert core.
