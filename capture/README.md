@@ -223,6 +223,15 @@ router rows to match, renumbers experts, and updates `expert_count`. Verified
 on Qwen3.6-35B-A3B: 256 → 192 experts, **22.66 GB → 17.63 GB (−22.2%)**,
 loads and generates normally.
 
+Speed expectations (measured, 35B-A3B 256→192 on RTX 3090s): reaping does
+**not** speed up generation — the router still activates top-k=8 experts per
+token, so decode does the same work (measured ~6% *slower*, likely MoE-kernel
+tiling preferring 256). Prompt processing gains ~8% (a batch hits most of the
+pool, so fewer experts = denser GEMMs). The real win is **VRAM**: −22% weight
+memory is what lets the model fit fewer/smaller GPUs or keep a longer
+context. For raw decode speed, lower the *active* expert count instead
+(load-time `expert_used_count` override — no surgery, stacks with reaping).
+
 The pruned file is a *normal GGUF* — serve it with your regular `llama-server`
 via llama-swap, no capture tool involved. MTP note: next-token draft layers
 (`nextn_predict_layers`) carry their own experts but never appear in captures;
