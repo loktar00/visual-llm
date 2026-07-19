@@ -383,6 +383,9 @@ struct args_t {
     std::string reap_script = "reap_gguf.py"; // --reap-script: path for POST /reap
     // generation / model
     int   n_predict = 200, n_ctx = 4096, ngl = 99, threads = 0, top_k = 40;
+    int   n_cpu_moe = 0;    // --n-cpu-moe N: first N blocks' expert tensors in RAM
+    std::string ot_cpu;     // --ot-cpu <regex>: tensors matching regex pinned to RAM
+                            // (spread the offloaded blocks evenly to balance GPUs)
     float top_p = 0.95f, temp = 0.8f;
     uint32_t seed = 42;
 };
@@ -415,6 +418,8 @@ static args_t parse_args(int argc, char ** argv) {
         else if (k == "-n")             a.n_predict = atoi(next("-n"));
         else if (k == "-c")             a.n_ctx     = atoi(next("-c"));
         else if (k == "-ngl")           a.ngl       = atoi(next("-ngl"));
+        else if (k == "--n-cpu-moe")    a.n_cpu_moe = atoi(next("--n-cpu-moe"));
+        else if (k == "--ot-cpu")       a.ot_cpu    = next("--ot-cpu");
         else if (k == "-t")             a.threads   = atoi(next("-t"));
         else if (k == "--temp")         a.temp      = (float) atof(next("--temp"));
         else if (k == "--top-k")        a.top_k     = atoi(next("--top-k"));
@@ -452,6 +457,25 @@ static args_t parse_args(int argc, char ** argv) {
 bool Generator::init(const args_t & args) {
     llama_model_params mparams = llama_model_default_params();
     mparams.n_gpu_layers = args.ngl;
+    // --n-cpu-moe: pin the first N blocks' fused expert tensors to system RAM
+    // (llama-server parity) so models larger than total VRAM can run — the
+    // routing capture only needs the tiny ffn_moe_* probe tensors, which stay
+    // wherever the graph puts them.
+    static std::string      moe_pat;
+    static std::vector<llama_model_tensor_buft_override> moe_overrides;
+    if (!args.ot_cpu.empty() || args.n_cpu_moe > 0) {
+        if (!args.ot_cpu.empty()) {
+            moe_pat = args.ot_cpu;
+        } else {
+            std::string alt;
+            for (int i = 0; i < args.n_cpu_moe; i++) alt += (i ? "|" : "") + std::to_string(i);
+            moe_pat = "blk\\.(" + alt + ")\\.ffn_(up|down|gate)_exps";
+        }
+        moe_overrides = { { moe_pat.c_str(), ggml_backend_cpu_buffer_type() },
+                          { nullptr, nullptr } };
+        mparams.tensor_buft_overrides = moe_overrides.data();
+        fprintf(stderr, "cpu-offload pattern: %s\n", moe_pat.c_str());
+    }
     model = llama_model_load_from_file(args.model.c_str(), mparams);
     if (!model) { fprintf(stderr, "failed to load model: %s\n", args.model.c_str()); return false; }
     vocab = llama_model_get_vocab(model);

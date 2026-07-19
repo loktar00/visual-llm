@@ -50,6 +50,16 @@ token labels work on it unchanged.
 VRAM note: this loads its own copy of the model — stop `llama-server` first
 if the GPU is tight.
 
+**Models bigger than your VRAM** (e.g. a 200GB+ MoE on a multi-GPU rig):
+`--n-cpu-moe N` keeps the first N blocks' fused expert tensors in system RAM
+(llama-server parity), and `--ot-cpu <regex>` pins any tensor pattern to RAM —
+use the regex form to spread offloaded blocks **evenly** (e.g.
+`blk\.(3|5|7|…)\.ffn_(up|down|gate)_exps`), because offloading a contiguous
+prefix makes the remaining expert-heavy layers pile onto one GPU and OOM.
+Routing capture works unchanged: the `ffn_moe_*` probe tensors are tiny and
+live wherever the graph puts them. Mask determination is quant-independent,
+so capture on your smallest quant and apply the mask to any larger one.
+
 ## Server mode — capture every prompt via llama-swap
 
 Instead of running the CLI per prompt, run the tool as an OpenAI-compatible
