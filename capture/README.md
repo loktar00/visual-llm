@@ -327,3 +327,24 @@ the top of `cb_eval`.
   projected through the unembedding; a later, chunkier addition.
 - Live streaming — same JSON objects over a WebSocket instead of a file; the
   frontend already treats recordings as event streams.
+
+## Contrastive reaping (`contrast_mask.py`) — cut what's busy elsewhere
+
+Pure cold-ranking eventually cuts "quiet everywhere" experts — often
+rare-but-critical glue whose loss shows up as long-form repetition collapse.
+`contrast_mask.py` scores candidates differently: capture an **anti-domain
+corpus** (world knowledge, multilingual, prose — everything your domain never
+does) and cut experts that are **cold under your target AND hot under the
+anti-domain** — experts with a demonstrated full-time job somewhere you don't
+go.
+
+```bash
+python3 contrast_mask.py 'runs/target-*.jsonl' 'runs/anti-*.jsonl' \
+  --frac 0.5 --cold-pool 0.625 -o contrast-mask.txt
+```
+
+Measured on Qwen3.6-35B-A3B (canvas target vs 60-prompt anti corpus): at a
+62.5% cut, the pure-cold mask collapses long-form generation into repetition
+loops on every test prompt while the contrastive mask stays clean and even
+completes its files — at a cut carrying 74% of the anti-domain's routed mass.
+Domain overlap context: canvas-hot and anti-hot expert sets share only 48%.
