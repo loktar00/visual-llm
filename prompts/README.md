@@ -50,3 +50,10 @@ experts from cold on a 256-expert model.
 specimens), all single-file and dependency-free. Deliberately adjacent to
 `canvas-js/`: capture both against the same model and compare the masks to
 see how much two related-but-different domains share their expert core.
+
+## Included set: `deviations/`
+
+20 prompts adapting concepts from loktar00's original creative-coding archive
+([demos-and-deviations](https://github.com/loktar00/demos-and-deviations)) —
+raycast lighting, metaballs, screen-melt, self-weaving tapestries, and more.
+Same house voice and output contract as `canvas-js/`.
