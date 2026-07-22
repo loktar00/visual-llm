@@ -9,7 +9,7 @@ Create a single self-contained HTML file using only HTML, CSS, and JavaScript. N
 
 Build a top-down dungeon crawler in the spirit of the arcade classic Gauntlet: a tile-based maze dungeon with walls, floors, locked doors and keys, food that restores health, treasure for score, and monster generators that continuously spawn enemies (ghosts, grunts) which swarm toward the hero. The hero fires projectiles in the direction of movement; shooting a generator destroys it. Health drains slowly over time, Gauntlet-style. When the exit is reached, generate a fresh maze level. HUD shows health, score, keys, and level.
 
-The game must run as an autonomous attract mode by default: an AI-controlled hero explores, fights, collects, and descends levels endlessly with no input. Arrow keys/WASD + space take over control at any keypress; after 10 seconds of inactivity, attract mode resumes.
+THIS IS A GAME THAT PLAYS ITSELF. It must run as an autonomous attract mode by default and forever: an AI-controlled hero explores, fights, collects, and descends levels endlessly with no input. When the hero dies, flash GAME OVER for ~2 seconds, then automatically start a fresh run (new maze, reset stats) and keep playing — the demo must never sit on a static screen. Arrow keys/WASD + space let a human take over at any keypress; after 10 seconds of inactivity, attract mode resumes.
 
 Art: draw everything as crisp vector/procedural art on canvas. ADDITIONALLY, declare at the top of your script a global `window.ASSET_MANIFEST` — a JSON object mapping asset slots to image-generation prompts, exactly this shape:
 
