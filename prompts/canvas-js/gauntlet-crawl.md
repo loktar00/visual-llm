@@ -28,6 +28,8 @@ window.ASSET_MANIFEST = {
 };
 ```
 
-Write each prompt as you would brief a text-to-image model: subject, style, view angle, palette, background, "game asset" framing. At startup, attempt to load each file; any image that loads replaces the corresponding procedural art in-game (drawn to tile/sprite size), and any that fails to load falls back silently to your vector art. The game must be fully playable and visually complete with zero images present.
+Write each prompt as you would brief a text-to-image model: subject, style, view angle, palette, background, "game asset" framing. At startup, attempt to load each file; any image that loads MUST be drawn with drawImage for that slot — floors and walls as tiles, entities as sprites — fully replacing the vector art. Vector art is only the fallback for images that fail to load. The game must be fully playable and visually complete with zero images present.
+
+Camera & scale: render a scrolling camera view that follows the hero — do NOT draw the whole maze zoomed out. Tiles must be at least 48 pixels on screen so the artwork is actually visible; the visible window is a portion of a larger level.
 
 Output requirement: reply with ONLY the complete HTML file — a single code block, no explanation, no commentary, not a single word outside the code.
